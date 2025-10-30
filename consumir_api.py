@@ -6,8 +6,9 @@ import pandas as pd
 import requests
 import sys
 
-pasta_dados = os.path.join("data", "privado") 
-arquivo_csv = os.path.join(pasta_dados, "investimentos_marica_2025.csv")
+pasta_dados = os.path.join("data", "privado") # Define o caminho da pasta de dados
+arquivo_bimestre = os.path.join(pasta_dados, "investimentos_marica_2025.csv") # Define o caminho do arquivo de bimestre
+arquivo_segmento = os.path.join(pasta_dados, 'investimentos_por_segmento.csv') # Define o caminho do arquivo de segmento
 os.makedirs(pasta_dados, exist_ok=True) # Cria a pasta de dados, se não existir
 
 logging.basicConfig(
@@ -45,7 +46,9 @@ except Exception as e:
 
 #-----------------código do pandas-----------------
 if response.ok:
+
     logging.info(f"Requisicao bem-sucedida: Status {response.status_code}") # Log de sucesso
+
     data = response.json()["data"]
 
     mapa_meses = {1: '1° Bimestre', 2: '2° Bimestre', 3: '3° Bimestre', 4: '4° Bimestre', 5: '5° Bimestre', 6: '6° Bimestre'} # Mapeamento dos meses por bimestre
@@ -54,21 +57,35 @@ if response.ok:
     
     df['vl_total_atual'] = df['vl_total_atual'].astype(float) # Converte para float
     
+    # -----------Verificações adicionais com logs-----------
     if df['vl_total_atual'].min() < 0:
         logging.warning("Valor negativo encontrado em 'vl_atual_ativo'") # Log de aviso para valores negativos
     
     if "apicadprev.trabalho.gov.br" not in response.url:
         logging.warning(f"URL inesperada na resposta da API: {response.url}") # Log de aviso para URL inesperada
+    #-------------------------------------------------------
+
+    fundos = df.groupby('no_segmento')['vl_total_atual'].sum() # Agrupa por segmento e soma os valores
+    vl_total_geral = fundos.sum() # Calcula o valor total geral
+    percentual = (fundos / vl_total_geral) * 100 # Calcula o percentual de cada segmento
+    # Cria um DataFrame com os resultados
+    df_segmento = pd.DataFrame({ 
+        'vl_total_atual': fundos, 
+        'percentual': percentual.round(2) 
+    })
+    df_segmento = df_segmento.sort_values(by='vl_total_atual', ascending=False).reset_index() # Ordena por valor total decrescente e reseta o índice
+    df_segmento.to_csv(arquivo_segmento, index=False, sep=';', decimal=',') # Salva o resumo por segmento em CSV
+
+    print(f"Arquivo '{arquivo_segmento}' salvo com sucesso!")
+    print("\nResumo dos fundos por segmento:")
+    print(df_segmento)
 
     vl_total_por_mes = df.groupby('dt_mes_bimestre')['vl_total_atual'].sum() # Agrupa por mês/bimestre e soma os valores
-
     vl_total_por_mes = vl_total_por_mes.rename(mapa_meses) # Renomeia os índices para nomes dos meses
-
     vl_total_por_mes = vl_total_por_mes.round(2) # Arredonda para 2 casas decimais
+    vl_total_por_mes.to_csv(arquivo_bimestre) # Salva o resumo em CSV
 
-    vl_total_por_mes.to_csv(arquivo_csv) # Salva o resumo em CSV
-
-    print(f"Arquivo '{arquivo_csv}' salvo com sucesso!")
+    print(f"Arquivo '{arquivo_bimestre}' salvo com sucesso!")
     print("\nResumo dos totais por mês:")
     print(vl_total_por_mes)
 
